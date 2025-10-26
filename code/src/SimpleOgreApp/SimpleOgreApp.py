@@ -1,5 +1,6 @@
 ## -------------------------------------------------------------------------
 ## @author Leonardo Florez-Valencia (florez-l@javeriana.edu.co)
+## @author Alejandro Caicedo (caicedo_alejandro@javeriana.edu.co)
 ## -------------------------------------------------------------------------
 
 import os, sys, vtk
@@ -12,6 +13,20 @@ import Ogre.Bites as OgreBites
 class MyPowerfulCameraMan( OgreBites.CameraMan ):
   def __init__( self, node ):
     super( MyPowerfulCameraMan, self ).__init__( node )
+  # end def
+# end class
+
+class ProjectileInputListener( OgreBites.InputListener ):
+  def __init__( self, app ):
+    super( ProjectileInputListener, self ).__init__( )
+    self._app = app
+  # end def
+
+  def mousePressed( self, evt ):
+    if evt.button == OgreBites.BUTTON_LEFT:
+      self._app._spawnProjectile( )
+    # end if
+    return True
   # end def
 # end class
 
@@ -28,6 +43,13 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
   def __init__( self ):
     super( SimpleOgreApp, self ).__init__( 'SimpleOgreApp v0.1', '' )
     self.m_ResourcesFile = os.path.join( cur_dir, 'resources.cfg' )
+    self._projectiles = [ ]
+    self._projectile_speed = 30.0
+    self._projectile_lifetime = 3.0
+    self._projectile_index = 0
+    self._root_node = None
+    self._camera = None
+    self._projectile_listener = ProjectileInputListener( self )
   # end def
 
   '''
@@ -38,6 +60,7 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     win = self.getRenderWindow( )
     root = self.getRoot( )
     root_node = self.m_SceneMgr.getRootSceneNode( )
+    self._root_node = root_node
 
     # Configure camera
     cam = self.m_SceneMgr.createCamera( 'MainCamera' )
@@ -49,12 +72,14 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
 
     camnode.lookAt( [ 0, 0, 0 ], Ogre.Node.TS_WORLD )
     camnode.attachObject( cam )
+    self._camera = cam
 
     self.m_CamMan = MyPowerfulCameraMan( camnode )
     self.m_CamMan.setStyle( OgreBites.CS_FREELOOK )
     self.m_CamMan.setTopSpeed( 10 )
     self.m_CamMan.setFixedYaw( True )
     self.addInputListener( self.m_CamMan )
+    self.addInputListener( self._projectile_listener )
 
     # Configure viewport
     vp = win.addViewport( cam )
@@ -132,7 +157,61 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     self.m_CamMan.getCamera( ).setPosition( pos )
   # end def
 
+  def _spawnProjectile( self ):
+    cam = self._camera
+    if cam is None or self._root_node is None:
+      return
+    direction = cam.getDerivedDirection( ).normalisedCopy( )
+    origin = cam.getDerivedPosition( ) + direction * 0.5  # half a meter in front of the camera
+    name = f"Projectile_{self._projectile_index}"
+    self._projectile_index += 1
+    entity = self.m_SceneMgr.createEntity( name, Ogre.SceneManager.PT_SPHERE )
+    entity.setMaterialName( "pelota" )
+    node = self._root_node.createChildSceneNode( name + "_node" )
+    node.setScale( 0.0005, 0.0005, 0.0005 )
+    node.setPosition( origin )
+    node.attachObject( entity )
+    velocity = direction * self._projectile_speed
+    self._projectiles.append( {
+      'node': node,
+      'entity': entity,
+      'velocity': velocity,
+      'ttl': self._projectile_lifetime
+    } )
+  # end def
 
+  def _updateProjectiles( self, dt ):
+    alive = [ ]
+    for data in self._projectiles:
+      data[ 'ttl' ] -= dt
+      if data[ 'ttl' ] <= 0:
+        self._destroyProjectile( data )
+        continue
+      displacement = data[ 'velocity' ] * dt
+      data[ 'node' ].translate( displacement, Ogre.Node.TS_WORLD )
+      alive.append( data )
+    # end for
+    self._projectiles = alive
+  # end def
+
+  def _destroyProjectile( self, data ):
+    node = data.get( 'node' )
+    entity = data.get( 'entity' )
+    if node is not None:
+      node.detachAllObjects( )
+      self.m_SceneMgr.destroySceneNode( node.getName( ) )
+    # end if
+    if entity is not None:
+      self.m_SceneMgr.destroyEntity( entity )
+    # end if
+  # end def
+
+  def frameRenderingQueued( self, evt ):
+    if not super( SimpleOgreApp, self ).frameRenderingQueued( evt ):
+      return False
+    self._updateProjectiles( evt.timeSinceLastFrame )
+    return True
+  # end def
 # end class
 
 """
