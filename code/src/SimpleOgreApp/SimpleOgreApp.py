@@ -234,37 +234,7 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
       cam_pos = self._camera.getDerivedPosition( )
       base_pos = [ cam_pos.x, cam_pos.y, cam_pos.z ]
     # Slight randomness keeps spheres near the player without overlapping
-    min_dist = self._eye_min_spawn_distance
-    target_pos = None
-    offset = None
-    # Makes sure the spawned sphere is at least min_dist away from the base_pos
-    for _ in range( 10 ):
-      candidate = [
-        base_pos[ 0 ] + random.uniform( *self._spawn_offset_range[ 'x' ] ),
-        max( 0.5, base_pos[ 1 ] + random.uniform( *self._spawn_offset_range[ 'y' ] ) ),
-        base_pos[ 2 ] + random.uniform( *self._spawn_offset_range[ 'z' ] )
-      ]
-      offset = [
-        candidate[ 0 ] - base_pos[ 0 ],
-        candidate[ 1 ] - base_pos[ 1 ],
-        candidate[ 2 ] - base_pos[ 2 ]
-      ]
-      distance = math.sqrt( offset[ 0 ] ** 2 + offset[ 1 ] ** 2 + offset[ 2 ] ** 2 )
-      if distance >= min_dist:
-        target_pos = candidate
-        break
-    # end for
-    if target_pos is None:
-      if offset is None or ( offset[ 0 ] == 0 and offset[ 1 ] == 0 and offset[ 2 ] == 0 ):
-        offset = [ 1.0, 0.0, 0.0 ]
-      dir_vec = Ogre.Vector3( offset[ 0 ], offset[ 1 ], offset[ 2 ] )
-      if dir_vec.length( ) == 0:
-        dir_vec = Ogre.Vector3( 1.0, 0.0, 0.0 )
-      dir_vec = dir_vec.normalisedCopy( )
-      base_vec = Ogre.Vector3( base_pos[ 0 ], base_pos[ 1 ], base_pos[ 2 ] )
-      desired = base_vec + dir_vec * min_dist
-      target_pos = [ desired.x, max( 0.5, desired.y ), desired.z ]
-    # end if
+    target_pos = self._pickSpawnPosition( base_pos, self._spawn_offset_range, self._eye_min_spawn_distance )
     node.setPosition( target_pos )
     node.attachObject( entity )
     self._orientEyeNode( node )
@@ -342,6 +312,39 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     self._updateSpawner( dt )
     self._updateEyeSpheres( dt )
     return True
+  # end def
+
+  def _pickSpawnPosition( self, base_pos, offset_ranges, min_distance, attempts = 10, min_height = 0.5 ):
+    target_pos = None
+    offset = None
+    for _ in range( attempts ):
+      candidate = [
+        base_pos[ 0 ] + random.uniform( *offset_ranges[ 'x' ] ),
+        max( min_height, base_pos[ 1 ] + random.uniform( *offset_ranges[ 'y' ] ) ),
+        base_pos[ 2 ] + random.uniform( *offset_ranges[ 'z' ] )
+      ]
+      offset = [
+        candidate[ 0 ] - base_pos[ 0 ],
+        candidate[ 1 ] - base_pos[ 1 ],
+        candidate[ 2 ] - base_pos[ 2 ]
+      ]
+      distance = math.sqrt( offset[ 0 ] ** 2 + offset[ 1 ] ** 2 + offset[ 2 ] ** 2 )
+      if distance >= min_distance:
+        target_pos = candidate
+        break
+    # end for
+    if target_pos is None:
+      if offset is None or ( offset[ 0 ] == 0 and offset[ 1 ] == 0 and offset[ 2 ] == 0 ):
+        offset = [ 1.0, 0.0, 0.0 ]
+      dir_vec = Ogre.Vector3( offset[ 0 ], offset[ 1 ], offset[ 2 ] )
+      if dir_vec.length( ) == 0:
+        dir_vec = Ogre.Vector3( 1.0, 0.0, 0.0 )
+      dir_vec = dir_vec.normalisedCopy( )
+      base_vec = Ogre.Vector3( base_pos[ 0 ], base_pos[ 1 ], base_pos[ 2 ] )
+      desired = base_vec + dir_vec * min_distance
+      target_pos = [ desired.x, max( min_height, desired.y ), desired.z ]
+    # end if
+    return target_pos
   # end def
 # end class
 
