@@ -3,7 +3,7 @@
 ## @author Alejandro Caicedo (caicedo_alejandro@javeriana.edu.co)
 ## -------------------------------------------------------------------------
 
-import os, sys, random, vtk
+import os, sys, math, random, vtk
 cur_dir = os.path.dirname( os.path.abspath( __file__ ) )
 imp_dir = os.path.abspath( os.path.join( cur_dir, '../../lib' ) )
 sys.path.append( imp_dir )
@@ -60,6 +60,9 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     }
     self._spawned_spheres = [ ]
     self._spawn_index = 0
+    self._eye_move_speed = 4.0
+    self._eye_stop_distance = 1.0
+    self._eye_min_spawn_distance = 5.0 # Min distance from camera to spawn eye spheres
   # end def
 
   '''
@@ -231,17 +234,45 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
       cam_pos = self._camera.getDerivedPosition( )
       base_pos = [ cam_pos.x, cam_pos.y, cam_pos.z ]
     # Slight randomness keeps spheres near the player without overlapping
-    target_pos = [
-      base_pos[ 0 ] + random.uniform( *self._spawn_offset_range[ 'x' ] ),
-      max( 0.5, base_pos[ 1 ] + random.uniform( *self._spawn_offset_range[ 'y' ] ) ),
-      base_pos[ 2 ] + random.uniform( *self._spawn_offset_range[ 'z' ] )
-    ]
+    min_dist = self._eye_min_spawn_distance
+    target_pos = None
+    offset = None
+    # Makes sure the spawned sphere is at least min_dist away from the base_pos
+    for _ in range( 10 ):
+      candidate = [
+        base_pos[ 0 ] + random.uniform( *self._spawn_offset_range[ 'x' ] ),
+        max( 0.5, base_pos[ 1 ] + random.uniform( *self._spawn_offset_range[ 'y' ] ) ),
+        base_pos[ 2 ] + random.uniform( *self._spawn_offset_range[ 'z' ] )
+      ]
+      offset = [
+        candidate[ 0 ] - base_pos[ 0 ],
+        candidate[ 1 ] - base_pos[ 1 ],
+        candidate[ 2 ] - base_pos[ 2 ]
+      ]
+      distance = math.sqrt( offset[ 0 ] ** 2 + offset[ 1 ] ** 2 + offset[ 2 ] ** 2 )
+      if distance >= min_dist:
+        target_pos = candidate
+        break
+    # end for
+    if target_pos is None:
+      if offset is None or ( offset[ 0 ] == 0 and offset[ 1 ] == 0 and offset[ 2 ] == 0 ):
+        offset = [ 1.0, 0.0, 0.0 ]
+      dir_vec = Ogre.Vector3( offset[ 0 ], offset[ 1 ], offset[ 2 ] )
+      if dir_vec.length( ) == 0:
+        dir_vec = Ogre.Vector3( 1.0, 0.0, 0.0 )
+      dir_vec = dir_vec.normalisedCopy( )
+      base_vec = Ogre.Vector3( base_pos[ 0 ], base_pos[ 1 ], base_pos[ 2 ] )
+      desired = base_vec + dir_vec * min_dist
+      target_pos = [ desired.x, max( 0.5, desired.y ), desired.z ]
+    # end if
     node.setPosition( target_pos )
     node.attachObject( entity )
     self._orientEyeNode( node )
     self._spawned_spheres.append( {
       'node': node,
-      'entity': entity
+  'entity': entity,
+  'speed': self._eye_move_speed,
+      'stop_distance': self._eye_stop_distance
     } )
   # end def
 
@@ -267,9 +298,29 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     node.setOrientation( orientation )
   # end def
 
-  def _updateEyeSpheres( self ):
+  def _updateEyeSpheres( self, dt ):
+    if self._camera is None:
+      return
+    cam_pos = self._camera.getDerivedPosition( )
     for data in self._spawned_spheres:
-      self._orientEyeNode( data.get( 'node' ) )
+      node = data.get( 'node' )
+      if node is None:
+        continue
+      node_pos = node._getDerivedPosition( )
+      direction = cam_pos - node_pos
+      distance = direction.length( )
+      stop_distance = data.get( 'stop_distance', self._eye_stop_distance )
+      if distance > stop_distance and distance > 0:
+        direction = direction.normalisedCopy( )
+        move_speed = data.get( 'speed', self._eye_move_speed )
+        step = min( move_speed * dt, max( 0.0, distance - stop_distance ) )
+        if step > 0:
+          displacement = direction * step
+          node.translate( displacement, Ogre.Node.TS_WORLD )
+          node_pos = node._getDerivedPosition( )
+          direction = cam_pos - node_pos
+      # end if
+      self._orientEyeNode( node )
     # end for
   # end def
 
@@ -286,9 +337,10 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
   def frameRenderingQueued( self, evt ):
     if not super( SimpleOgreApp, self ).frameRenderingQueued( evt ):
       return False
-    self._updateProjectiles( evt.timeSinceLastFrame )
-    self._updateSpawner( evt.timeSinceLastFrame )
-    self._updateEyeSpheres( )
+    dt = evt.timeSinceLastFrame
+    self._updateProjectiles( dt )
+    self._updateSpawner( dt )
+    self._updateEyeSpheres( dt )
     return True
   # end def
 # end class
