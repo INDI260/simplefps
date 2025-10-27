@@ -82,6 +82,11 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     self._cone_min_spawn_distance = 4.0
     self._cone_mesh_name = "ProceduralConeMesh"
     self._cone_mesh_created = False
+    # Collision detection radius
+    self._projectile_radius = 0.05  # Projectile collision radius
+    self._eye_radius = 1.5          # Eye sphere collision radius
+    self._cube_radius = 2.0         # Cube collision radius
+    self._cone_radius = 0.6         # Cone collision radius
   # end def
 
   '''
@@ -221,6 +226,12 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
         continue
       displacement = data[ 'velocity' ] * dt
       data[ 'node' ].translate( displacement, Ogre.Node.TS_WORLD )
+      
+      # Check collision with enemies
+      if self._checkProjectileCollisions( data ):
+        self._destroyProjectile( data )
+        continue
+      
       alive.append( data )
     # end for
     self._projectiles = alive
@@ -236,6 +247,72 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     if entity is not None:
       self.m_SceneMgr.destroyEntity( entity )
     # end if
+  # end def
+
+  def _destroyEnemy( self, data ):
+    node = data.get( 'node' )
+    entity = data.get( 'entity' )
+    if node is not None:
+      node.detachAllObjects( )
+      self.m_SceneMgr.destroySceneNode( node.getName( ) )
+    # end if
+    if entity is not None:
+      self.m_SceneMgr.destroyEntity( entity )
+    # end if
+  # end def
+
+  def _checkProjectileCollisions( self, projectile_data ):
+    proj_node = projectile_data.get( 'node' )
+    if proj_node is None:
+      return False
+    proj_pos = proj_node._getDerivedPosition( )
+    
+    # Check collision with eye spheres
+    for enemy in self._spawned_spheres:
+      enemy_node = enemy.get( 'node' )
+      if enemy_node is None:
+        continue
+      enemy_pos = enemy_node._getDerivedPosition( )
+      distance = ( proj_pos - enemy_pos ).length( )
+      if distance < ( self._projectile_radius + self._eye_radius ):
+        enemy[ 'health' ] -= 1
+        if enemy[ 'health' ] <= 0:
+          self._destroyEnemy( enemy )
+          self._spawned_spheres.remove( enemy )
+        return True
+    # end for
+    
+    # Check collision with cubes
+    for enemy in self._spawned_cubes:
+      enemy_node = enemy.get( 'node' )
+      if enemy_node is None:
+        continue
+      enemy_pos = enemy_node._getDerivedPosition( )
+      distance = ( proj_pos - enemy_pos ).length( )
+      if distance < ( self._projectile_radius + self._cube_radius ):
+        enemy[ 'health' ] -= 1
+        if enemy[ 'health' ] <= 0:
+          self._destroyEnemy( enemy )
+          self._spawned_cubes.remove( enemy )
+        return True
+    # end for
+    
+    # Check collision with cones
+    for enemy in self._spawned_cones:
+      enemy_node = enemy.get( 'node' )
+      if enemy_node is None:
+        continue
+      enemy_pos = enemy_node._getDerivedPosition( )
+      distance = ( proj_pos - enemy_pos ).length( )
+      if distance < ( self._projectile_radius + self._cone_radius ):
+        enemy[ 'health' ] -= 1
+        if enemy[ 'health' ] <= 0:
+          self._destroyEnemy( enemy )
+          self._spawned_cones.remove( enemy )
+        return True
+    # end for
+    
+    return False
   # end def
 
   def _spawnSphere( self ):
@@ -261,7 +338,8 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
       'node': node,
       'entity': entity,
       'speed': self._eye_move_speed,
-      'stop_distance': self._eye_stop_distance
+      'stop_distance': self._eye_stop_distance,
+      'health': 2
     } )
   # end def
 
@@ -328,7 +406,8 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
       'node': node,
       'entity': entity,
       'speed': self._cone_move_speed,
-      'stop_distance': self._cone_stop_distance
+      'stop_distance': self._cone_stop_distance,
+      'health': 1
     } )
   # end def
 
@@ -359,7 +438,8 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
       'node': node,
       'entity': entity,
       'speed': self._cube_move_speed,
-      'stop_distance': self._cube_stop_distance
+      'stop_distance': self._cube_stop_distance,
+      'health': 3
     } )
   # end def
 
