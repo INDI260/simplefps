@@ -63,6 +63,15 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     self._eye_move_speed = 4.0
     self._eye_stop_distance = 1.0
     self._eye_min_spawn_distance = 5.0 # Min distance from camera to spawn eye spheres
+    self._cube_spawn_timer = 0.0
+    self._cube_interval_range = ( 3.0, 6.0 )
+    self._next_cube_spawn_delay = random.uniform( *self._cube_interval_range )
+    self._cube_spawn_index = 0
+    self._spawned_cubes = [ ]
+    self._cube_move_speed = 2.0
+    self._cube_stop_distance = 1.5
+    self._cube_min_spawn_distance = 6.0
+    self._cube_ground_height = 0.0
   # end def
 
   '''
@@ -240,9 +249,40 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     self._orientEyeNode( node )
     self._spawned_spheres.append( {
       'node': node,
-  'entity': entity,
-  'speed': self._eye_move_speed,
+      'entity': entity,
+      'speed': self._eye_move_speed,
       'stop_distance': self._eye_stop_distance
+    } )
+  # end def
+
+  def _spawnCube( self ):
+    if self._root_node is None:
+      return
+    name = f"SpawnedCube_{self._cube_spawn_index}"
+    self._cube_spawn_index += 1
+    entity = self.m_SceneMgr.createEntity( name, Ogre.SceneManager.PT_CUBE )
+    entity.setMaterialName( "slime_cube" )
+    node = self._root_node.createChildSceneNode( name + "_node" )
+    scale = random.uniform( 0.03, 0.05 )
+    node.setScale( scale, scale, scale )
+    base_pos = [ 0.0, self._cube_ground_height, 0.0 ]
+    if self._camera is not None:
+      cam_pos = self._camera.getDerivedPosition( )
+      base_pos = [ cam_pos.x, self._cube_ground_height, cam_pos.z ]
+    spawn_pos = self._pickSpawnPosition(
+      base_pos,
+      self._spawn_offset_range,
+      self._cube_min_spawn_distance,
+      min_height = self._cube_ground_height
+    )
+    spawn_pos[ 1 ] = self._cube_ground_height + 50.0 * scale
+    node.setPosition( spawn_pos )
+    node.attachObject( entity )
+    self._spawned_cubes.append( {
+      'node': node,
+      'entity': entity,
+      'speed': self._cube_move_speed,
+      'stop_distance': self._cube_stop_distance
     } )
   # end def
 
@@ -294,6 +334,35 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     # end for
   # end def
 
+  def _updateCubeEnemies( self, dt ):
+    if self._camera is None:
+      return
+    cam_pos = self._camera.getDerivedPosition( )
+    target_ground = Ogre.Vector3( cam_pos.x, self._cube_ground_height, cam_pos.z )
+    for data in self._spawned_cubes:
+      node = data.get( 'node' )
+      if node is None:
+        continue
+      node_pos = node._getDerivedPosition( )
+      node_ground = Ogre.Vector3( node_pos.x, self._cube_ground_height, node_pos.z )
+      direction = target_ground - node_ground
+      distance = direction.length( )
+      stop_distance = data.get( 'stop_distance', self._cube_stop_distance )
+      if distance > stop_distance and distance > 0:
+        direction = direction.normalisedCopy( )
+        move_speed = data.get( 'speed', self._cube_move_speed )
+        step = min( move_speed * dt, max( 0.0, distance - stop_distance ) )
+        if step > 0:
+          displacement = direction * step
+          node.translate( displacement, Ogre.Node.TS_WORLD )
+      # end if
+      scale_vec = node.getScale( )
+      local_pos = node.getPosition( )
+      half_height = 50.0 * scale_vec.y
+      node.setPosition( [ local_pos.x, self._cube_ground_height + half_height, local_pos.z ] )
+    # end for
+  # end def
+
   def _updateSpawner( self, dt ):
     # Spawn spheres once the timer reaches the next randomized delay
     self._spawn_timer += dt
@@ -301,6 +370,12 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
       self._spawnSphere( )
       self._spawn_timer -= self._next_spawn_delay
       self._next_spawn_delay = random.uniform( *self._spawn_interval_range )
+    # end while
+    self._cube_spawn_timer += dt
+    while self._cube_spawn_timer >= self._next_cube_spawn_delay:
+      self._spawnCube( )
+      self._cube_spawn_timer -= self._next_cube_spawn_delay
+      self._next_cube_spawn_delay = random.uniform( *self._cube_interval_range )
     # end while
   # end def
 
@@ -311,6 +386,7 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     self._updateProjectiles( dt )
     self._updateSpawner( dt )
     self._updateEyeSpheres( dt )
+    self._updateCubeEnemies( dt )
     return True
   # end def
 

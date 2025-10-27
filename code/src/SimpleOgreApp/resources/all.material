@@ -54,3 +54,17 @@ material eye_sphere
   }
 }
 
+material slime_cube
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture slime_cube.jpg
+      }
+    }
+  }
+}
+
