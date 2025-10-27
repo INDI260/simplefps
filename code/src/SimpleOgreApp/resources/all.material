@@ -40,3 +40,17 @@ material pelota
   }
 }
 
+material eye_sphere
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture eye.png
+      }
+    }
+  }
+}
+

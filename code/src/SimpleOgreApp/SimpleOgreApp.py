@@ -3,7 +3,7 @@
 ## @author Alejandro Caicedo (caicedo_alejandro@javeriana.edu.co)
 ## -------------------------------------------------------------------------
 
-import os, sys, vtk
+import os, sys, random, vtk
 cur_dir = os.path.dirname( os.path.abspath( __file__ ) )
 imp_dir = os.path.abspath( os.path.join( cur_dir, '../../lib' ) )
 sys.path.append( imp_dir )
@@ -50,6 +50,16 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     self._root_node = None
     self._camera = None
     self._projectile_listener = ProjectileInputListener( self )
+    self._spawn_timer = 0.0
+    self._spawn_interval_range = ( 2.0, 5.0 )
+    self._next_spawn_delay = random.uniform( *self._spawn_interval_range )
+    self._spawn_offset_range = {
+      'x': ( -5.0, 5.0 ),
+      'y': ( -0.5, 2.0 ),
+      'z': ( -5.0, 5.0 )
+    }
+    self._spawned_spheres = [ ]
+    self._spawn_index = 0
   # end def
 
   '''
@@ -206,10 +216,79 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     # end if
   # end def
 
+  def _spawnSphere( self ):
+    if self._root_node is None:
+      return
+    name = f"SpawnedSphere_{self._spawn_index}"
+    self._spawn_index += 1
+    entity = self.m_SceneMgr.createEntity( name, Ogre.SceneManager.PT_SPHERE )
+    entity.setMaterialName( "eye_sphere" )
+    node = self._root_node.createChildSceneNode( name + "_node" )
+    sx = random.uniform( 0.016, 0.03 )
+    node.setScale( sx, sx, sx )
+    base_pos = [ 0.0, 1.7, 0.0 ]
+    if self._camera is not None:
+      cam_pos = self._camera.getDerivedPosition( )
+      base_pos = [ cam_pos.x, cam_pos.y, cam_pos.z ]
+    # Slight randomness keeps spheres near the player without overlapping
+    target_pos = [
+      base_pos[ 0 ] + random.uniform( *self._spawn_offset_range[ 'x' ] ),
+      max( 0.5, base_pos[ 1 ] + random.uniform( *self._spawn_offset_range[ 'y' ] ) ),
+      base_pos[ 2 ] + random.uniform( *self._spawn_offset_range[ 'z' ] )
+    ]
+    node.setPosition( target_pos )
+    node.attachObject( entity )
+    self._orientEyeNode( node )
+    self._spawned_spheres.append( {
+      'node': node,
+      'entity': entity
+    } )
+  # end def
+
+  def _orientEyeNode( self, node ):
+    if node is None or self._camera is None:
+      return
+    cam_pos = self._camera.getDerivedPosition( )
+    node_pos = node._getDerivedPosition( )
+    look_dir = ( cam_pos - node_pos )
+    if look_dir.length( ) == 0:
+      return
+    look_dir = look_dir.normalisedCopy( )
+    up = Ogre.Vector3( 0, 1, 0 )
+    if abs( look_dir.dotProduct( up ) ) > 0.99:
+      up = Ogre.Vector3( 0, 0, 1 )
+    right = look_dir.crossProduct( up )
+    if right.length( ) == 0:
+      return
+    right = right.normalisedCopy( )
+    corrected_up = right.crossProduct( look_dir ).normalisedCopy( )
+    orientation = Ogre.Quaternion( )
+    orientation.FromAxes( right, corrected_up, -look_dir )
+    node.setOrientation( orientation )
+  # end def
+
+  def _updateEyeSpheres( self ):
+    for data in self._spawned_spheres:
+      self._orientEyeNode( data.get( 'node' ) )
+    # end for
+  # end def
+
+  def _updateSpawner( self, dt ):
+    # Spawn spheres once the timer reaches the next randomized delay
+    self._spawn_timer += dt
+    while self._spawn_timer >= self._next_spawn_delay:
+      self._spawnSphere( )
+      self._spawn_timer -= self._next_spawn_delay
+      self._next_spawn_delay = random.uniform( *self._spawn_interval_range )
+    # end while
+  # end def
+
   def frameRenderingQueued( self, evt ):
     if not super( SimpleOgreApp, self ).frameRenderingQueued( evt ):
       return False
     self._updateProjectiles( evt.timeSinceLastFrame )
+    self._updateSpawner( evt.timeSinceLastFrame )
+    self._updateEyeSpheres( )
     return True
   # end def
 # end class
