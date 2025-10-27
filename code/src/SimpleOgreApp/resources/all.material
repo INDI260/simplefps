@@ -68,3 +68,17 @@ material slime_cube
   }
 }
 
+material missile_cone
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture missile.jpg
+      }
+    }
+  }
+}
+

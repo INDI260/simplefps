@@ -72,6 +72,16 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     self._cube_stop_distance = 1.5
     self._cube_min_spawn_distance = 6.0
     self._cube_ground_height = 0.0
+    self._cone_spawn_timer = 0.0
+    self._cone_interval_range = ( 3.0, 6.0 )
+    self._next_cone_spawn_delay = random.uniform( *self._cone_interval_range )
+    self._cone_spawn_index = 0
+    self._spawned_cones = [ ]
+    self._cone_move_speed = 6.0
+    self._cone_stop_distance = 0.5
+    self._cone_min_spawn_distance = 4.0
+    self._cone_mesh_name = "ProceduralConeMesh"
+    self._cone_mesh_created = False
   # end def
 
   '''
@@ -255,6 +265,73 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     } )
   # end def
 
+  def _ensureConeMesh( self ):
+    if self._cone_mesh_created:
+      return
+    cone_source = vtk.vtkConeSource( )
+    cone_source.SetHeight( 100.0 )
+    cone_source.SetRadius( 50.0 )
+    cone_source.SetResolution( 24 )
+    cone_source.Update( )
+    normal_generator = vtk.vtkPolyDataNormals( )
+    normal_generator.SetInputData( cone_source.GetOutput( ) )
+    normal_generator.ComputePointNormalsOn( )
+    normal_generator.ComputeCellNormalsOff( )
+    normal_generator.Update( )
+    poly = normal_generator.GetOutput( )
+    normals = poly.GetPointData( ).GetNormals( )
+    manual_name = "ProceduralConeManual"
+    manual = self.m_SceneMgr.createManualObject( manual_name )
+    manual.begin( "missile_cone", Ogre.RenderOperation.OT_TRIANGLE_LIST )
+    for i in range( poly.GetNumberOfPoints( ) ):
+      pos = poly.GetPoint( i )
+      manual.position( pos )
+      if normals is not None:
+        n = normals.GetTuple( i )
+        manual.normal( n )
+    # end for
+    for i in range( poly.GetNumberOfCells( ) ):
+      cell = poly.GetCell( i )
+      if cell.GetNumberOfPoints( ) == 3:
+        manual.triangle( cell.GetPointId( 0 ), cell.GetPointId( 1 ), cell.GetPointId( 2 ) )
+    # end for
+    manual.end( )
+    manual.convertToMesh( self._cone_mesh_name )
+    self.m_SceneMgr.destroyManualObject( manual )
+    self._cone_mesh_created = True
+  # end def
+
+  def _spawnCone( self ):
+    if self._root_node is None:
+      return
+    self._ensureConeMesh( )
+    name = f"SpawnedCone_{self._cone_spawn_index}"
+    self._cone_spawn_index += 1
+    entity = self.m_SceneMgr.createEntity( name, self._cone_mesh_name )
+    entity.setMaterialName( "missile_cone" )
+    node = self._root_node.createChildSceneNode( name + "_node" )
+    scale = random.uniform( 0.008, 0.015 )
+    node.setScale( scale, scale, scale )
+    base_pos = [ 0.0, 1.7, 0.0 ]
+    if self._camera is not None:
+      cam_pos = self._camera.getDerivedPosition( )
+      base_pos = [ cam_pos.x, cam_pos.y, cam_pos.z ]
+    spawn_pos = self._pickSpawnPosition(
+      base_pos,
+      self._spawn_offset_range,
+      self._cone_min_spawn_distance
+    )
+    node.setPosition( spawn_pos )
+    node.attachObject( entity )
+    self._orientEyeNode( node )
+    self._spawned_cones.append( {
+      'node': node,
+      'entity': entity,
+      'speed': self._cone_move_speed,
+      'stop_distance': self._cone_stop_distance
+    } )
+  # end def
+
   def _spawnCube( self ):
     if self._root_node is None:
       return
@@ -334,6 +411,30 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     # end for
   # end def
 
+  def _updateConeEnemies( self, dt ):
+    if self._camera is None:
+      return
+    cam_pos = self._camera.getDerivedPosition( )
+    for data in self._spawned_cones:
+      node = data.get( 'node' )
+      if node is None:
+        continue
+      node_pos = node._getDerivedPosition( )
+      direction = cam_pos - node_pos
+      distance = direction.length( )
+      stop_distance = data.get( 'stop_distance', self._cone_stop_distance )
+      if distance > stop_distance and distance > 0:
+        direction = direction.normalisedCopy( )
+        move_speed = data.get( 'speed', self._cone_move_speed )
+        step = min( move_speed * dt, max( 0.0, distance - stop_distance ) )
+        if step > 0:
+          node.translate( direction * step, Ogre.Node.TS_WORLD )
+          node_pos = node._getDerivedPosition( )
+      # end if
+      self._orientEyeNode( node )
+    # end for
+  # end def
+
   def _updateCubeEnemies( self, dt ):
     if self._camera is None:
       return
@@ -377,6 +478,12 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
       self._cube_spawn_timer -= self._next_cube_spawn_delay
       self._next_cube_spawn_delay = random.uniform( *self._cube_interval_range )
     # end while
+    self._cone_spawn_timer += dt
+    while self._cone_spawn_timer >= self._next_cone_spawn_delay:
+      self._spawnCone( )
+      self._cone_spawn_timer -= self._next_cone_spawn_delay
+      self._next_cone_spawn_delay = random.uniform( *self._cone_interval_range )
+    # end while
   # end def
 
   def frameRenderingQueued( self, evt ):
@@ -386,6 +493,7 @@ class SimpleOgreApp( PUJ_Ogre.BaseApplication ):
     self._updateProjectiles( dt )
     self._updateSpawner( dt )
     self._updateEyeSpheres( dt )
+    self._updateConeEnemies( dt )
     self._updateCubeEnemies( dt )
     return True
   # end def
